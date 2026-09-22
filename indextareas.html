@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mis Tareas — Finanzas KC</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root{
+    --charcoal:#1E1E1E; --cream:#F2F1EC; --cream-2:#EAE7DD;
+    --gold:#C9A227; --gold-soft:#B8975A;
+    --green:#4F7A5A; --green-soft:#E4ECE4;
+    --amber:#B8863B; --amber-soft:#F1E6D2;
+    --red:#8C3B2E; --red-soft:#F0E0DB; --line:#D8D4C6; --muted:#8a8a80;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--cream);color:var(--charcoal);font-family:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;min-height:100vh;}
+  .app{max-width:820px;margin:0 auto;padding:40px 24px 80px;}
+  h1{font-size:26px;margin:0 0 4px;}
+  .sub{color:#6a675d;font-size:14px;font-style:italic;margin-bottom:28px;}
+
+  #loginScreen{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    min-height:60vh;text-align:center;gap:18px;
+  }
+  #loginScreen p{max-width:380px;color:#5b584f;font-size:14.5px;}
+
+  #appScreen{display:none;}
+  .who-bar{
+    display:flex;justify-content:space-between;align-items:center;
+    border-bottom:1px solid var(--charcoal);padding-bottom:14px;margin-bottom:24px;
+  }
+  .who-bar span{font-size:13.5px;color:#6a675d;}
+  .who-bar button{
+    background:none;border:1px solid var(--line);color:#6a675d;font-family:inherit;
+    font-size:12.5px;padding:6px 12px;border-radius:2px;cursor:pointer;
+  }
+
+  .mundo-block{background:#fff;border:1px solid var(--line);border-radius:3px;padding:20px 22px;margin-bottom:18px;}
+  .mundo-block h2{font-size:18px;margin:0 0 4px;}
+  .mundo-block .mm{font-size:12.5px;color:#6a675d;margin-bottom:14px;}
+  .task-row{
+    display:flex;justify-content:space-between;align-items:center;gap:12px;
+    padding:10px 0;border-top:1px solid var(--cream-2);font-size:13.5px;
+  }
+  .task-row:first-of-type{border-top:none;}
+  .task-row .tt{font-weight:600;}
+  .task-row .tp{font-size:11.5px;color:#8a8878;margin-top:2px;}
+  .task-row.mine .tt{color:var(--gold-soft);}
+  .mine-tag{font-size:10px;border:1px solid var(--gold-soft);color:var(--gold-soft);padding:1px 7px;border-radius:9px;margin-left:6px;}
+  .status-badge{font-size:11px;padding:2px 9px;border-radius:10px;white-space:nowrap;}
+  .b-pendiente{background:var(--red-soft);color:var(--red);}
+  .b-progreso{background:var(--amber-soft);color:var(--amber);}
+  .b-terminada{background:var(--green-soft);color:var(--green);}
+
+  .msg{max-width:420px;margin:60px auto;text-align:center;color:#6a675d;font-size:14.5px;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div id="loginScreen">
+    <h1>Mis Tareas — Finanzas KC</h1>
+    <p>Ingresa con tu cuenta @kitchencenter.cl para ver los mundos donde tienes tareas asignadas.</p>
+    <div id="gsiButton"></div>
+    <p id="loginError" style="color:var(--red);display:none;"></p>
+  </div>
+
+  <div id="appScreen">
+    <div class="who-bar">
+      <span id="whoText"></span>
+      <button id="logoutBtn">Cerrar sesión</button>
+    </div>
+    <div id="content"></div>
+  </div>
+
+</div>
+
+<script>
+// ------------- CONFIGURA ESTO -------------
+const CLIENT_ID = '912245260213-c8bI4mIbtrub0hosmmoma86k5mvs40mo.apps.googleusercontent.com';
+const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbw4JxNoPOeyIf8zI0zr-UNy5LwaoP18XVk5KYn_c0CASPJjvI8sdvWA34IiWXMonymqvg/exec';
+// -------------------------------------------
+
+const $ = s => document.querySelector(s);
+
+function labelEstado(e){ return e==='pendiente' ? 'Pendiente' : e==='progreso' ? 'En curso' : 'Terminada'; }
+
+function initGSI(){
+  if(!window.google || CLIENT_ID.startsWith('PEGA_')){
+    $('#loginError').style.display = 'block';
+    $('#loginError').textContent = 'Falta configurar CLIENT_ID en el portal.';
+    return;
+  }
+  google.accounts.id.initialize({
+    client_id: CLIENT_ID,
+    callback: onSignIn
+  });
+  google.accounts.id.renderButton($('#gsiButton'), { theme:'outline', size:'large', text:'signin_with' });
+}
+window.addEventListener('load', initGSI);
+
+let sessionToken = null;
+
+function onSignIn(response){
+  sessionToken = response.credential; // JWT de Google, se verifica en el backend
+  cargarDatos();
+}
+
+function cargarDatos(){
+  if(BACKEND_URL.startsWith('PEGA_')){
+    $('#loginError').style.display = 'block';
+    $('#loginError').textContent = 'Falta configurar BACKEND_URL en el portal.';
+    return;
+  }
+  fetch(`${BACKEND_URL}?token=${encodeURIComponent(sessionToken)}`)
+    .then(r=>r.json())
+    .then(data=>{
+      if(data.error === 'no_autorizado'){
+        showError('Tu sesión no pertenece a un correo @kitchencenter.cl válido.');
+        return;
+      }
+      if(data.error === 'correo_no_registrado'){
+        showError('Tu correo no está en la lista de Parámetros. Pídele a Alejandro que te agregue.');
+        return;
+      }
+      renderApp(data);
+    })
+    .catch(()=> showError('No se pudo conectar con el backend. Intenta de nuevo más tarde.'));
+}
+
+function showError(msg){
+  $('#loginScreen').style.display = 'none';
+  $('#appScreen').style.display = 'block';
+  $('#whoText').textContent = '';
+  $('#content').innerHTML = `<div class="msg">${msg}</div>`;
+}
+
+function renderApp(data){
+  $('#loginScreen').style.display = 'none';
+  $('#appScreen').style.display = 'block';
+  $('#whoText').textContent = data.admin
+    ? `Sesión: ${data.tuCorreo||'acceso completo'} · Vista completa (CFO)`
+    : `Sesión: ${data.tuNombre} (${data.tuCorreo})`;
+
+  const tareas = data.tareas;
+  const mundos = [...new Set(tareas.map(t=>t.Mundo))];
+
+  if(mundos.length===0){
+    $('#content').innerHTML = `<div class="msg">Todavía no tienes tareas asignadas en ningún mundo.</div>`;
+    return;
+  }
+
+  $('#content').innerHTML = mundos.map(nombreMundo=>{
+    const propias = tareas.filter(t=>t.Mundo===nombreMundo);
+    const filas = propias.map(t=>{
+      const esMia = !data.admin && (t.Personas||[]).includes(data.tuNombre);
+      return `
+        <div class="task-row ${esMia?'mine':''}">
+          <div>
+            <div class="tt">${t.Titulo}${esMia?'<span class="mine-tag">Tuya</span>':''}</div>
+            <div class="tp">${(t.Personas||[]).join(', ')||'Sin asignar'}</div>
+          </div>
+          <span class="status-badge b-${t.Estado}">${labelEstado(t.Estado)}</span>
+        </div>`;
+    }).join('');
+    return `
+      <div class="mundo-block">
+        <h2>${nombreMundo}</h2>
+        <div class="mm">${propias.length} tarea${propias.length!==1?'s':''} en este mundo</div>
+        ${filas}
+      </div>`;
+  }).join('');
+}
+
+$('#logoutBtn').addEventListener('click', ()=>{
+  sessionToken = null;
+  google.accounts.id.disableAutoSelect();
+  $('#appScreen').style.display = 'none';
+  $('#loginScreen').style.display = 'flex';
+});
+</script>
+</body>
+</html>
